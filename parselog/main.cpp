@@ -270,6 +270,7 @@ main(int argc, PCHAR* argv)
 
     if (! g_options.exename.empty()) {
         g_runner->SetExecutable(g_options.exename);
+        std::cout << "Executable: " << g_options.exename << std::endl;
     }
 
     if (g_options.opt_input_state)

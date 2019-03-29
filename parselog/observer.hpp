@@ -11,6 +11,7 @@ public:
     virtual std::string GetPrefix() = 0;
     virtual std::string GetExecutable() = 0;
     virtual void RequestToStop() = 0;
+    virtual int IsVerbose() = 0;
 };
 
 class LogRunnerObserver {

@@ -15,6 +15,9 @@
 #include "observer.hpp"
 #include "serializer.h"
 
+static int g_verbose = 0;
+static int g_verbose_count = 20;
+
 bool
 LogRunner::Open(std::string &filename) {
     filename_ = filename;
@@ -389,46 +392,23 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     app_pc next_bb = buf_bb.addr + len_last_instr;
     bool bb_is_sub = thread_info.bb_count == 0;
 
-#if 0
     if (thread_info.id == 0) {
-        std::cout << std::dec << thread_info.id << "] ";
-        std::cout << "bb.pc " << std::hex << buf_bb.pc;
-        std::cout << " next " << std::hex << next_bb;
-        std::cout << " bb.link ";
-        switch (bb_link) {
-            case LINK_CALL: std::cout << "CALL"; break;
-            case LINK_RETURN: std::cout << "RETURN"; break;
-            case LINK_JMP: std::cout << "JMP"; break;
+        if (g_verbose == 1) {
+            std::cout << std::dec << thread_info.id << "] ";
+            std::cout << "BB pc:0x" << std::hex << buf_bb.pc;
+            std::cout << " next:0x" << next_bb;
+            std::cout << " bb.link:";
+            switch (bb_link) {
+                case LINK_CALL: std::cout << "CALL"; break;
+                case LINK_RETURN: std::cout << "RETURN"; break;
+                case LINK_JMP: std::cout << "JMP"; break;
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
     }
-#endif
     // fixes stacks for bb with called (usually) to untracked api
     df_stackitem_c bb_untracked_api;
 
-    if (thread_info.last_bb.link == LINK_CALL) {
-        bb_is_sub = true;
-        size_t i = thread_info.stacks.size();
-        if (i) {
-            df_stackitem_c& last_item = thread_info.stacks[i-1];
-            if (last_item.kind == KIND_BB && last_item.next == thread_info.within_bb) {
-                if (thread_info.last_kind == KIND_BB)
-                    bb_untracked_api = last_item;
-
-                while (thread_info.stacks.size() > i-1) {
-                    df_stackitem_c& item = thread_info.stacks.back();
-                    item.ts = thread_info.now_ts;
-                    OnPop(thread_info.id, item);
-                    thread_info.stacks.pop_back();
-                }
-                // thread_info.stacks.erase(
-                //     thread_info.stacks.begin()+i-1,
-                //     thread_info.stacks.end());
-
-                bb_is_sub = false;
-            }
-        }
-    }
     if (thread_info.last_bb.link == LINK_RETURN) {
         size_t i;
         for (i = thread_info.stacks.size(); i > 0; --i) {
@@ -477,6 +457,27 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                 //throw std::runtime_error ("DIE!");
             }
         }
+    } else {
+        bb_is_sub = thread_info.last_bb.link == LINK_CALL;
+
+        size_t i = thread_info.stacks.size();
+        if (i) {
+            df_stackitem_c& last_item = thread_info.stacks[i-1];
+            if (last_item.kind == KIND_BB && last_item.next == thread_info.within_bb) {
+                if (thread_info.last_kind == KIND_BB)
+                    bb_untracked_api = last_item;
+
+                // DO: stacks.erase( begin()+i-1, end());
+                while (thread_info.stacks.size() > i-1) {
+                    df_stackitem_c& item = thread_info.stacks.back();
+                    item.ts = thread_info.now_ts;
+                    OnPop(thread_info.id, item);
+                    thread_info.stacks.pop_back();
+                }
+
+                bb_is_sub = false;
+            }
+        }
     }
 
     if (bb_untracked_api.pc) {
@@ -520,19 +521,20 @@ LogRunner::DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym)
 void
 LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall)
 {
-    const bool verbose = false;
-
     std::string name;
     if (symbol_names_.find(buf_libcall.func) != symbol_names_.end()) {
         name = symbol_names_[buf_libcall.func];
     }
 
-    if (verbose) {
+    if (g_verbose == 0 && name == "IDirect3DTexture9_AddRef") g_verbose = 1;
+
+    if (g_verbose == 1) {
         if (thread_info.id == 0) {
             std::cout << std::dec << thread_info.id << "] ";
             std::cout << "Lib Call func:0x" << std::hex << buf_libcall.func;
             std::cout << " '" << name;
             std::cout << "' Ret:0x" << buf_libcall.ret_addr;
+            std::cout << " ts:" << std::dec << thread_info.now_ts;
             std::cout << std::endl;
         }
     }
@@ -566,19 +568,21 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
 void
 LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
 {
-    const bool verbose = false;
     std::string name;
     if (symbol_names_.find(buf_libret.func) != symbol_names_.end()) {
         name = symbol_names_[buf_libret.func];
     }
 
-    if (verbose) {
+    if (g_verbose == 1) {
         if (thread_info.id == 0) {
             std::cout << std::dec << thread_info.id << "] ";
             std::cout << "Lib Ret func:0x" << std::hex << buf_libret.func;
             std::cout << " '" << name;
             std::cout << "' Ret:0x" << buf_libret.ret_addr;
+            std::cout << " ts:" << std::dec << thread_info.now_ts;
             std::cout << std::endl;
+
+            if (--g_verbose_count <= 0) g_verbose = 0;
         }
     }
 
@@ -598,15 +602,13 @@ LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
     for (i = thread_info.stacks.size(); i > 0; --i) {
         df_stackitem_c& item = thread_info.stacks[i-1];
         if (item.kind == KIND_LIB_CALL && item.next == buf_libret.ret_addr) {
+            // stacks.erase(begin()+i-1, end());
             while (thread_info.stacks.size() > i-1) {
                 df_stackitem_c& item = thread_info.stacks.back();
                 item.ts = thread_info.now_ts;
                 OnPop(thread_info.id, item);
                 thread_info.stacks.pop_back();
             }
-            // thread_info.stacks.erase(
-            //     thread_info.stacks.begin()+i-1,
-            //     thread_info.stacks.end());
             break;
         }
     }
@@ -921,6 +923,9 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
 
     OnApiCall(thread_info.id, apicall_ret);
 }
+
+int
+LogRunner::IsVerbose() { return g_verbose; }
 
 void
 LogRunner::DoEndBB(thread_info_c &thread_info)

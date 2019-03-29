@@ -110,6 +110,7 @@ public:
     virtual std::string GetPrefix() override;
     virtual std::string GetExecutable() override;
     virtual void RequestToStop() override;
+    virtual int IsVerbose() override;
 
     void AddObserver(LogRunnerObserver *observer);
     void ListObservers();
@@ -158,6 +159,7 @@ public:
 
     void RestoreSymbols(std::istream &in);
     void RestoreState(std::istream &in);
+
 
     std::mutex resume_mx_;
     std::condition_variable resume_cv_;

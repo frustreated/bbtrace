@@ -83,10 +83,10 @@ public:
     void
     OnApiCall(uint thread_id, df_apicall_c &apicall_ret) override
     {
-#if 0
-        std::cout << std::dec << thread_id << "] OnApiCall Return: ";
-        apicall_ret.Dump();
-#endif
+        if (false) { // logrunner_->IsVerbose() == 1) {
+            std::cout << std::dec << thread_id << "] OnApiCall Return: ";
+            apicall_ret.Dump();
+        }
     }
 
     void
